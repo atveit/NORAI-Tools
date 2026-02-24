@@ -6,33 +6,24 @@ Norwegian AI dataset tools for improving and preparing Norwegian language datase
 
 NORAI-Tools implements a two-phase pipeline with two paths: a standard path using Borealis 4B, and a distilled path that adds Qwen distillation before Borealis polishing.
 
-### Standard Path
+```mermaid
+graph TD
+    A[NbAiLab/norwegian-alpaca<br/>51,942 rows] --> B
 
-```
-NbAiLab/norwegian-alpaca (51,942 rows)
-        |
-        v
-  [Phase 1] Borealis 4B improvement
-        |   (improve_alpaca.ipynb)
-        v
-  [Phase 1.5] GSPO dataset preparation
-        |     (prepare_gspo_dataset.ipynb)
-        v
-  [Phase 2] GSPO alignment training on Qwen3.5-35B-A3B
-            (gspo_train.ipynb)
-```
+    subgraph Standard Path
+        B["Phase 1: Borealis 4B improvement<br/><i>improve_alpaca.ipynb</i>"]
+        B --> C["Phase 1.5: GSPO dataset preparation<br/><i>prepare_gspo_dataset.ipynb</i>"]
+        C --> D["Phase 2: GSPO training on Qwen3.5-35B-A3B<br/><i>gspo_train.ipynb</i>"]
+        D --> E[/"LoRA adapter"/]
+    end
 
-### Distilled Path
+    B --> F
 
-```
-NbAiLab/norwegian-alpaca
-        |
-        v
-  [Phase 1b] Qwen distillation + Borealis polish
-        |    (distill_qwen_norwegian.ipynb)
-        v
-  [Phase 2b] GSPO alignment training on distilled dataset
-             (gspo_train_distilled.ipynb)
+    subgraph Distilled Path
+        F["Phase 1b: Qwen distillation + Borealis polish<br/><i>distill_qwen_norwegian.ipynb</i>"]
+        F --> G["Phase 2b: GSPO training on distilled dataset<br/><i>gspo_train_distilled.ipynb</i>"]
+        G --> H[/"LoRA adapter (distilled)"/]
+    end
 ```
 
 ## Project Structure
@@ -63,21 +54,32 @@ pyproject.toml                       # Package config
 
 ## Installation
 
+Requires Python 3.10+. Uses [uv](https://docs.astral.sh/uv/) for fast dependency management.
+
 ```bash
-# Basic (improvement pipeline)
-pip install -e .
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# With GSPO training dependencies (TRL, vLLM, sentence-transformers, etc.)
-pip install -e ".[gspo]"
-
-# With Modal cloud runner
-pip install -e ".[modal]"
-
-# With dev/test dependencies
-pip install -e ".[dev]"
+# Clone and sync
+git clone https://github.com/your-username/NORAI-Tools.git
+cd NORAI-Tools
+uv sync                    # Core deps (improvement pipeline)
+uv sync --extra dev        # + test deps
+uv sync --extra modal      # + Modal cloud runner
+uv sync --extra gspo       # + GSPO training (TRL, vLLM, etc.) — requires CUDA
 ```
 
-Requires Python 3.10+.
+<details>
+<summary>Using pip instead of uv</summary>
+
+```bash
+pip install -e .
+pip install -e ".[gspo]"    # GSPO training deps
+pip install -e ".[modal]"   # Modal cloud runner
+pip install -e ".[dev]"     # Test deps
+```
+
+</details>
 
 ## Quick Start
 
@@ -87,18 +89,44 @@ Open any notebook under `notebooks/` and run cells in order. Each notebook is a 
 
 ### Modal CLI
 
-Run pipeline steps on cloud GPUs via [Modal](https://modal.com):
+Run pipeline steps on [Modal](https://modal.com) cloud GPUs. No local GPU required.
 
 ```bash
-modal run modal_app.py --step improve
+# One-time setup
+uv sync --extra modal
+modal token new
+
+# Optional: add HuggingFace token for Hub push
+modal secret create huggingface HF_TOKEN=hf_your_token_here
 ```
 
-See [GenerateDatasetsAndTrainingPlan.md](GenerateDatasetsAndTrainingPlan.md) for the full Modal runbook.
+Available steps:
+
+| Command | Phase | GPU | Time |
+|---|---|---|---|
+| `modal run modal_app.py --step improve` | 1: Borealis improvement | L4 | ~12h |
+| `modal run modal_app.py --step prepare-gspo` | 1.5: GSPO dataset prep | CPU | ~1min |
+| `modal run modal_app.py --step distill-generate` | 1b: Qwen generation | A100-80GB | ~15h |
+| `modal run modal_app.py --step distill-polish` | 1b: Borealis polish | L4 | ~10h |
+| `modal run modal_app.py --step gspo-train` | 2: GSPO training | 2x A100-80GB | 24-72h |
+| `modal run modal_app.py --step gspo-train-distilled` | 2b: GSPO distilled | 2x A100-80GB | 24-72h |
+| `modal run modal_app.py --step all` | Full standard pipeline | | |
+| `modal run modal_app.py --step all-distilled` | Full distilled pipeline | | |
+
+Test on a small subset first:
+
+```bash
+modal run modal_app.py --step improve --subset 100
+```
+
+Datasets persist on Modal Volumes (`norai-data`, `norai-models`) across runs. All steps support checkpoint-based resumption if interrupted.
+
+See [GenerateDatasetsAndTrainingPlan.md](GenerateDatasetsAndTrainingPlan.md) for the full runbook with cost estimates, volume management, and CLI options.
 
 ### Tests
 
 ```bash
-pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ## Library API

@@ -6,16 +6,15 @@ This document describes how to run the full NORAI-Tools pipeline on [Modal](http
 
 The pipeline has two parallel paths, both starting from the NbAiLab/norwegian-alpaca dataset (51,942 rows):
 
-```
-Path A (Standard):
-  Phase 1:   Borealis 4B improves Norwegian text quality
-  Phase 1.5: Add prompt + task_type columns for training
-  Phase 2:   GSPO alignment training on Qwen3.5-35B-A3B
+```mermaid
+graph LR
+    subgraph Path A — Standard
+        A1[Phase 1<br/>Borealis improvement] --> A2[Phase 1.5<br/>GSPO dataset prep] --> A3[Phase 2<br/>GSPO training]
+    end
 
-Path B (Distilled):
-  Phase 1:   Same as above
-  Phase 1b:  Qwen generates new outputs + Borealis polishes them
-  Phase 2b:  GSPO alignment training on the distilled dataset
+    subgraph Path B — Distilled
+        B1[Phase 1<br/>Borealis improvement] --> B2[Phase 1b<br/>Qwen generation + Borealis polish] --> B3[Phase 2b<br/>GSPO training]
+    end
 ```
 
 Path B produces higher-quality reference outputs (Qwen's knowledge + Borealis's Norwegian fluency) and creates a self-distillation training signal.
@@ -25,13 +24,15 @@ Path B produces higher-quality reference outputs (Qwen's knowledge + Borealis's 
 ### Local Setup
 
 ```bash
-# Clone and install
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone and sync
 git clone https://github.com/your-username/NORAI-Tools.git
 cd NORAI-Tools
-pip install -e ".[modal]"
+uv sync --extra modal
 
 # Set up Modal
-pip install modal
 modal token new
 ```
 
@@ -174,32 +175,32 @@ modal run modal_app.py \
 
 ## Data Flow
 
-```
-NbAiLab/norwegian-alpaca (HuggingFace Hub)
-    │
-    ▼
-[Phase 1: improve] ─────────────────────────────────────────────
-    │                                                            │
-    ▼                                                            ▼
-norwegian_alpaca_improved.parquet                   norwegian_alpaca_improved.parquet
-    │                                                            │
-    ▼                                                            ▼
-[Phase 1.5: prepare-gspo]                         [Phase 1b: distill-generate]
-    │                                                            │
-    ▼                                                            ▼
-norwegian_alpaca_gspo.parquet                     norwegian_alpaca_qwen_raw.parquet
-    │                                                            │
-    ▼                                                            ▼
-[Phase 2: gspo-train]                             [Phase 1b: distill-polish]
-    │                                                            │
-    ▼                                                            ▼
-/models/gspo_qwen_norwegian/                      norwegian_alpaca_qwen_polished.parquet
-                                                                 │
-                                                                 ▼
-                                                  [Phase 2b: gspo-train-distilled]
-                                                                 │
-                                                                 ▼
-                                                  /models/gspo_qwen_norwegian_distilled/
+```mermaid
+graph TD
+    DS[(NbAiLab/norwegian-alpaca<br/>HuggingFace Hub)]
+    DS --> P1
+
+    P1["improve<br/><b>Phase 1</b>"]
+    P1 --> IMP[("improved.parquet")]
+
+    IMP --> P15
+    IMP --> DG
+
+    subgraph Path A — Standard
+        P15["prepare-gspo<br/><b>Phase 1.5</b>"]
+        P15 --> GSPO[("gspo.parquet")]
+        GSPO --> P2["gspo-train<br/><b>Phase 2</b>"]
+        P2 --> M1[/"LoRA adapter"/]
+    end
+
+    subgraph Path B — Distilled
+        DG["distill-generate<br/><b>Phase 1b Pass 1</b>"]
+        DG --> RAW[("qwen_raw.parquet")]
+        RAW --> DP["distill-polish<br/><b>Phase 1b Pass 2</b>"]
+        DP --> POL[("qwen_polished.parquet")]
+        POL --> P2B["gspo-train-distilled<br/><b>Phase 2b</b>"]
+        P2B --> M2[/"LoRA adapter (distilled)"/]
+    end
 ```
 
 ## Volume Management
