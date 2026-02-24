@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "norai-tools"
+version = "0.1.0"
+description = "Norwegian AI dataset tools — improve and prepare Norwegian language datasets"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "transformers",
+    "torch",
+    "datasets",
+    "tqdm",
+    "pandas",
+]
+
+[project.optional-dependencies]
+notebook = [
+    "jupyter",
+    "ipywidgets",
+]
+gspo = [
+    "trl>=0.28.0",
+    "peft>=0.15.0",
+    "accelerate",
+    "sentence-transformers",
+    "vllm",
+    "bitsandbytes",
+]
+modal = [
+    "modal",
+]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+[tool.setuptools.packages.find]
+include = ["norai_tools*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
